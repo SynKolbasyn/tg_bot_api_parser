@@ -8,4 +8,6 @@ class Type:
         :param optional: Is the type optional
         """
 
-        pass
+        self.name = name
+        self.tg_type = tg_type
+        self.optional = optional

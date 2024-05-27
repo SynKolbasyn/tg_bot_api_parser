@@ -12,6 +12,22 @@ html_path = f"{PROJECT_PATH}/html"
 html_name = "tg_bot_api.html"
 
 
+def trim(tag: Tag) -> str:
+    """
+    Leaves only the text from the tag
+
+    :param tag: The tag from which the entire text is selected
+    :return: Clean text
+    """
+
+    result = ""
+
+    for i in tag.stripped_strings:
+        result += i
+
+    return result
+
+
 def get_html() -> BeautifulSoup:
     """
     Gets the html code of the telegram bot api page and creates a BeautifulSoup object from it
@@ -76,7 +92,7 @@ def filtrate_data(data: BeautifulSoup) -> list[Tag]:
 
     result = []
     for i in data.find_all():
-        if i.name not in ("h4", "p", "table"):
+        if i.name not in ("h4", "p", "table", "ul"):
             continue
         result.append(i)
     return result
@@ -94,18 +110,47 @@ def check_type(type_name: Tag, type_desc: Tag) -> bool:
     if type_name.name != "h4" or type_desc.name != "p":
         return False
 
-    if not type_desc.text.strip().startswith("This object"):
+    if not trim(type_desc).startswith("This object"):
         return False
 
     return True
 
 
 def create_from_table(type_table: Tag) -> list[Type]:
-    return []
+    """
+    Creates a list of Types from the "table" tag
+
+    :param type_table: A tag containing a table of composite types
+    :return: A list of Types
+    """
+
+    result = []
+    table = type_table.select_one("tbody")
+
+    for types in table.find_all("tr"):
+        name, data_type, desc = types.find_all("td")
+        name, data_type, desc = trim(name), trim(data_type), trim(desc)
+
+        t = Type(name, data_type, desc.startswith("Optional"))
+        result.append(t)
+
+    return result
 
 
 def create_from_list(type_list: Tag) -> list[str]:
-    return []
+    """
+    Creates a list of strs from a "ul" tag
+
+    :param type_list: A tag containing a list of composite types
+    :return: A list of strs
+    """
+
+    result = []
+
+    for i in type_list.find_all("li"):
+        result.append(trim(i))
+
+    return result
 
 
 def parse_types(from_file: str = "") -> dict[str, list[Type]]:
@@ -132,14 +177,16 @@ def parse_types(from_file: str = "") -> dict[str, list[Type]]:
 
         match type_table.name:
             case "table":
-                result[type_name.text.strip()] = create_from_table(type_table)
+                result[trim(type_name)] = create_from_table(type_table)
             case "ul":
-                result[type_name.text.strip()] = create_from_list(type_table)
+                result[trim(type_name)] = create_from_list(type_table)
 
     return result
 
 
 def main() -> int:
+    result = parse_types(f"{html_path}/{html_name}")
+    print(*result.items(), sep="\n")
     return 0
 
 
