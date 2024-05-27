@@ -1,9 +1,9 @@
 import os
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
-import type
+from tg_type import Type
 
 
 TG_BOT_API_URL = "https://core.telegram.org/bots/api"
@@ -12,11 +12,11 @@ html_path = f"{PROJECT_PATH}/html"
 html_name = "tg_bot_api.html"
 
 
-def save_html() -> None:
+def get_html() -> BeautifulSoup:
     """
-    Saves the html page of the telegram bot api
+    Gets the html code of the telegram bot api page and creates a BeautifulSoup object from it
 
-    :return: None
+    :return: The BeautifulSoup object of the entire telegram bot api page
     """
 
     global TG_BOT_API_URL, html_path, html_name
@@ -26,8 +26,17 @@ def save_html() -> None:
     if response.status_code != 200:
         raise Exception("Request code not 200")
 
-    content = response.content
-    soup = BeautifulSoup(content, "html.parser")
+    return BeautifulSoup(response.text, "html.parser")
+
+
+def save_html() -> None:
+    """
+    Saves the html page of the telegram bot api
+
+    :return: None
+    """
+
+    soup = get_html()
 
     if not os.path.exists(html_path):
         os.makedirs(html_path)
@@ -37,31 +46,97 @@ def save_html() -> None:
         file.write(html)
 
 
-def load_html() -> BeautifulSoup:
+def load_html(path: str = "") -> BeautifulSoup:
     """
     Loads the downloaded telegram bot api page and creates a BeautifulSoup object from it
 
+    :param path: The path to the file containing the html code of the telegram bot api page
     :return: The BeautifulSoup object of the telegram bot api html page
     """
 
     global html_path, html_name
 
-    with open(f"{html_path}/{html_name}", "r", encoding="utf-8") as file:
+    if path == "":
+        path = f"{html_path}/{html_name}"
+
+    with open(path, "r", encoding="utf-8") as file:
         html = file.read()
-        soup = BeautifulSoup(html)
+        soup = BeautifulSoup(html, features="html.parser")
 
     return soup
 
 
-def parse_types() -> dict[str, list[type.Type]]:
+def filtrate_data(data: BeautifulSoup) -> list[Tag]:
+    """
+    The function removes all unnecessary tags
+
+    :param data: The tag that contains the basic information of the telegram bot api: <div id="dev_page_content">
+    :return: A list containing only the "h4", "p" and "table" tags
     """
 
-    :return:
+    result = []
+    for i in data.find_all():
+        if i.name not in ("h4", "p", "table"):
+            continue
+        result.append(i)
+    return result
+
+
+def check_type(type_name: Tag, type_desc: Tag) -> bool:
+    """
+    Checks whether the tag is a data type, since not all "h4" tags are such
+
+    :param type_name: The "h4" tag
+    :param type_desc: The "p" tag
+    :return: True if the tag is a data type, otherwise false
     """
 
-    soup = load_html()
+    if type_name.name != "h4" or type_desc.name != "p":
+        return False
 
-    return {}
+    if not type_desc.text.strip().startswith("This object"):
+        return False
+
+    return True
+
+
+def create_from_table(type_table: Tag) -> list[Type]:
+    return []
+
+
+def create_from_list(type_list: Tag) -> list[str]:
+    return []
+
+
+def parse_types(from_file: str = "") -> dict[str, list[Type]]:
+    """
+    Parses all types of telegram bot api data
+
+    :param from_file: The path to the file containing the html code of the telegram bot api page
+    :return: A dictionary whose keys are the name of the data type, the value is a list of Types or strings, depending
+             on the telegram data type
+    """
+
+    result = {}
+    soup = load_html(from_file) if from_file != "" else get_html()
+    data = soup.select_one("div[id=dev_page_content]")
+    filtered_data = filtrate_data(data)
+
+    for i, e in enumerate(filtered_data[2:], start=2):
+        type_name = filtered_data[i - 2]
+        type_desc = filtered_data[i - 1]
+        type_table = e
+
+        if not check_type(type_name, type_desc):
+            continue
+
+        match type_table.name:
+            case "table":
+                result[type_name.text.strip()] = create_from_table(type_table)
+            case "ul":
+                result[type_name.text.strip()] = create_from_list(type_table)
+
+    return result
 
 
 def main() -> int:
