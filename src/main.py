@@ -4,12 +4,26 @@ import requests
 from bs4 import BeautifulSoup, Tag
 
 from tg_type import Type
+from meta_rust import create_structs
 
 
 TG_BOT_API_URL = "https://core.telegram.org/bots/api"
 PROJECT_PATH = os.getenv("PROJECT_PATH")
-html_path = f"{PROJECT_PATH}/html"
-html_name = "tg_bot_api.html"
+HTML_PATH = f"{PROJECT_PATH}/html"
+HTML_NAME = "tg_bot_api.html"
+
+DESC_STARTS = (
+    "This object",
+    "This object",
+    "The reaction",
+    "The background",
+    "Describes",
+    "The boost",
+    "Represents",
+    "Contains",
+    "The message",
+    "A placeholder"
+)
 
 
 def trim(tag: Tag) -> str:
@@ -23,9 +37,9 @@ def trim(tag: Tag) -> str:
     result = ""
 
     for i in tag.stripped_strings:
-        result += i
+        result += f" {i} "
 
-    return result
+    return result.strip().replace("  ", " ")
 
 
 def get_html() -> BeautifulSoup:
@@ -35,7 +49,7 @@ def get_html() -> BeautifulSoup:
     :return: The BeautifulSoup object of the entire telegram bot api page
     """
 
-    global TG_BOT_API_URL, html_path, html_name
+    global TG_BOT_API_URL, HTML_PATH, HTML_NAME
 
     response = requests.get(TG_BOT_API_URL)
 
@@ -54,10 +68,10 @@ def save_html() -> None:
 
     soup = get_html()
 
-    if not os.path.exists(html_path):
-        os.makedirs(html_path)
+    if not os.path.exists(HTML_PATH):
+        os.makedirs(HTML_PATH)
 
-    with open(f"{html_path}/{html_name}", "w", encoding="utf-8") as file:
+    with open(f"{HTML_PATH}/{HTML_NAME}", "w", encoding="utf-8") as file:
         html = soup.prettify()
         file.write(html)
 
@@ -70,10 +84,10 @@ def load_html(path: str = "") -> BeautifulSoup:
     :return: The BeautifulSoup object of the telegram bot api html page
     """
 
-    global html_path, html_name
+    global HTML_PATH, HTML_NAME
 
     if path == "":
-        path = f"{html_path}/{html_name}"
+        path = f"{HTML_PATH}/{HTML_NAME}"
 
     with open(path, "r", encoding="utf-8") as file:
         html = file.read()
@@ -107,13 +121,16 @@ def check_type(type_name: Tag, type_desc: Tag) -> bool:
     :return: True if the tag is a data type, otherwise false
     """
 
+    global DESC_STARTS
+
     if type_name.name != "h4" or type_desc.name != "p":
         return False
 
-    if not trim(type_desc).startswith("This object"):
-        return False
-
-    return True
+    trimmed_type_desc = trim(type_desc)
+    for start in DESC_STARTS:
+        if trimmed_type_desc.startswith(start):
+            return True
+    return False
 
 
 def create_from_table(type_table: Tag) -> list[Type]:
@@ -180,13 +197,15 @@ def parse_types(from_file: str = "") -> dict[str, list[Type]]:
                 result[trim(type_name)] = create_from_table(type_table)
             case "ul":
                 result[trim(type_name)] = create_from_list(type_table)
+            case _:
+                result[trim(type_name)] = []
 
     return result
 
 
 def main() -> int:
-    result = parse_types(f"{html_path}/{html_name}")
-    print(*result.items(), sep="\n")
+    result = parse_types(f"{HTML_PATH}/{HTML_NAME}")
+    create_structs(result)
     return 0
 
 
