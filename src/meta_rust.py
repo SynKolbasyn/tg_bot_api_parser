@@ -13,6 +13,13 @@ TYPES = {
 
 
 def get_type(tg_type: str) -> str:
+    """
+    Converts the telegram botapi data type to the Rust data type
+
+    :param tg_type: Telegram bot api data type
+    :return: The Rust data type
+    """
+
     global TYPES
 
     tg_type_copy = tg_type.lower()
@@ -27,6 +34,13 @@ def get_type(tg_type: str) -> str:
 
 
 def or_enum_name(tg_type: str) -> str:
+    """
+    Creates an enumeration name
+
+    :param tg_type: Telegram bot api data type
+    :return: The name of the enumeration
+    """
+
     tg_type_list = [*tg_type]
     name = ""
     for i, e in enumerate(tg_type_list):
@@ -38,6 +52,13 @@ def or_enum_name(tg_type: str) -> str:
 
 
 def or_enum(tg_type: str) -> str:
+    """
+    Generates an enumeration from data types
+
+    :param tg_type: Telegram bot api data type
+    :return: Generated enumeration
+    """
+
     tg_type_copy = tg_type.lower().strip()
 
     if ("arrayof" in tg_type_copy) and ("or" in tg_type_copy):
@@ -53,6 +74,13 @@ def or_enum(tg_type: str) -> str:
 
 
 def generate_structs(item: tuple[str, list[Type]] | tuple[str, list[str]]) -> list[str]:
+    """
+    Generates a structure for the telegram bot api data type
+
+    :param item: Telegram bot api data type
+    :return: A list with structures
+    """
+
     name = item[0]
     fields = item[1]
 
@@ -85,6 +113,13 @@ def generate_structs(item: tuple[str, list[Type]] | tuple[str, list[str]]) -> li
 
 
 def save_structs(structs: set[str]) -> None:
+    """
+    Saves structures to a file
+
+    :param structs: Structures that need to be preserved
+    :return: None
+    """
+
     global FILE_PATH, FILE_NAME
 
     if not os.path.exists(FILE_PATH):
@@ -100,13 +135,16 @@ def save_structs(structs: set[str]) -> None:
 
 
 def create_structs(types: dict[str, list[Type]] | dict[str, list[str]]) -> None:
+    """
+    Generates and stores telegram bot api type in rust structures
+
+    :param types: Parsed telegram bot api data types
+    :return: None
+    """
+
     structs = set()
     for item in types.items():
         for struct in generate_structs(item):
             structs.add(struct)
     save_structs(structs)
-        # print(key, end=" [ ")
-        # for i in val:
-        #     print(i.name if type(i) is Type else i, end=" ")
-        # print("]")
 

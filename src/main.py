@@ -14,7 +14,6 @@ HTML_NAME = "tg_bot_api.html"
 
 DESC_STARTS = (
     "This object",
-    "This object",
     "The reaction",
     "The background",
     "Describes",
