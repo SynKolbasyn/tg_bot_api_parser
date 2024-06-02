@@ -169,7 +169,7 @@ def create_from_list(type_list: Tag) -> list[str]:
     return result
 
 
-def parse_types(from_file: str = "") -> dict[str, list[Type]]:
+def parse_types(from_file: str = "") -> dict[str, list[Type] | list[str]]:
     """
     Parses all types of telegram bot api data
 

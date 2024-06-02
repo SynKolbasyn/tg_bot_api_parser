@@ -5,7 +5,8 @@ from tg_type import Type
 
 PROJECT_PATH = os.getenv("PROJECT_PATH")
 FILE_PATH = f"{PROJECT_PATH}/generated/rust"
-FILE_NAME = "types.rs"
+TYPES_FILE_NAME = "types.rs"
+METHODS_FILE_NAME = "bot.rs"
 
 TYPES = {
     "Integer": "i64", "String": "String", "InputFile": "InputFile", "True": "bool", "Boolean": "bool", "Float": "f64"
@@ -112,6 +113,43 @@ def generate_structs(item: tuple[str, list[Type]] | tuple[str, list[str]]) -> li
     return result
 
 
+def get_type_names(structs: set[str]) -> list[tuple[str, str]]:
+    result = [("None", "")]
+
+    for struct in structs:
+        struct = struct[len("#[derive(Serialize, Deserialize, Debug, Clone)]\n"):]
+        begin = 0
+        end = 0
+
+        if struct.startswith("pub enum "):
+            begin = len("pub enum ")
+        elif struct.startswith("pub struct "):
+            begin = len("pub struct ")
+        else:
+            raise Exception("UNKNOWN START OF STRUCT")
+
+        if ";" in struct:
+            end = struct.find(";")
+        else:
+            end = struct.find(" ", begin)
+
+        result.append((struct[begin:end], f"({struct[begin:end]})"))
+        result.append((f"ArrayOf{struct[begin:end]}", f"(Vec<{struct[begin:end]}>)"))
+        result.append((f"ArrayOfArrayOf{struct[begin:end]}", f"(Vec<Vec<{struct[begin:end]}>>)"))
+
+    return result
+
+
+def generate_all_types_enum(structs: set[str]) -> str:
+    on_of_type_enum = "#[derive(Serialize, Deserialize, Debug, Clone)]\n"
+    on_of_type_enum += "pub enum OneOfType {\n"
+    for t in get_type_names(structs):
+        type_name = t[0]
+        type_type = t[1]
+        on_of_type_enum += f"\t{type_name}{type_type},\n"
+    return on_of_type_enum + "}\n\n"
+
+
 def save_structs(structs: set[str]) -> None:
     """
     Saves structures to a file
@@ -120,7 +158,7 @@ def save_structs(structs: set[str]) -> None:
     :return: None
     """
 
-    global FILE_PATH, FILE_NAME
+    global FILE_PATH, TYPES_FILE_NAME
 
     if not os.path.exists(FILE_PATH):
         os.makedirs(FILE_PATH)
@@ -130,11 +168,11 @@ def save_structs(structs: set[str]) -> None:
         code += struct
     # print(code)
 
-    with open(f"{FILE_PATH}/{FILE_NAME}", "w", encoding="utf-8") as file:
+    with open(f"{FILE_PATH}/{TYPES_FILE_NAME}", "w", encoding="utf-8") as file:
         file.write(code)
 
 
-def create_structs(types: dict[str, list[Type]] | dict[str, list[str]]) -> None:
+def create_structs(types: dict[str, list[Type] | list[str]]) -> None:
     """
     Generates and stores telegram bot api type in rust structures
 
@@ -146,5 +184,34 @@ def create_structs(types: dict[str, list[Type]] | dict[str, list[str]]) -> None:
     for item in types.items():
         for struct in generate_structs(item):
             structs.add(struct)
+    structs.add(generate_all_types_enum(structs))
+
     save_structs(structs)
 
+
+def generate_method(item: tuple[str, list[Type]]) -> str:
+    pass
+
+
+def save_methods(methods: list[str]) -> None:
+    global FILE_PATH, METHODS_FILE_NAME
+
+    if not os.path.exists(FILE_PATH):
+        os.makedirs(FILE_PATH)
+
+    code = "use anyhow::Result;\n"
+    code += "use reqwest::blocking::*;\n"
+    code += "use serde::{Deserialize, Serialize};\n"
+    code += "use serde_json;\n\n"
+    code += "use crate::types::*;\n"
+
+    for method in methods:
+        code += method
+
+    with open(f"{FILE_PATH}/{METHODS_FILE_NAME}", "w", encoding="utf-8") as file:
+        file.write(code)
+
+
+def create_methods(methods: dict[str, list[Type]]) -> None:
+    result = [generate_method(item) for item in methods.items()]
+    save_methods(result)
