@@ -1,16 +1,19 @@
 import os
+import re
 
-from tg_type import Type
+from tg import Type, MethodField
 
 
 PROJECT_PATH = os.getenv("PROJECT_PATH")
 FILE_PATH = f"{PROJECT_PATH}/generated/rust"
 TYPES_FILE_NAME = "types.rs"
-METHODS_FILE_NAME = "bot.rs"
+METHODS_FILE_NAME = "api.rs"
 
 TYPES = {
     "Integer": "i64", "String": "String", "InputFile": "InputFile", "True": "bool", "Boolean": "bool", "Float": "f64"
 }
+
+CAMEL_CASE_PATTERN = re.compile(r"(?<!^)(?=[A-Z])")
 
 
 def get_type(tg_type: str) -> str:
@@ -42,6 +45,9 @@ def or_enum_name(tg_type: str) -> str:
     :return: The name of the enumeration
     """
 
+    tg_type = tg_type.replace(" , ", " ")
+    tg_type = tg_type.replace(" and ", " ")
+
     tg_type_list = [*tg_type]
     name = ""
     for i, e in enumerate(tg_type_list):
@@ -62,8 +68,18 @@ def or_enum(tg_type: str) -> str:
 
     tg_type_copy = tg_type.lower().strip()
 
-    if ("arrayof" in tg_type_copy) and ("or" in tg_type_copy):
+    if ("array of" in tg_type_copy) and (" or " in tg_type_copy):
         raise Exception("'Array of' and 'or' in one type")
+
+    if "array of" in tg_type_copy:
+        result = "#[derive(Serialize, Deserialize, Debug, Clone)]\n"
+        result += "pub enum %s {\n" % or_enum_name(tg_type)
+        tg_type = tg_type[len("array of "):]
+        tg_type = tg_type.replace(" , ", " ")
+        tg_type = tg_type.replace(" and ", " ")
+        for t in tg_type.split(" "):
+            result += f"\tArrayOf{t}(Vec<{t}>),\n"
+        return result + "}\n\n"
 
     result = "#[derive(Serialize, Deserialize, Debug, Clone)]\n"
     result += "pub enum %s {\n" % or_enum_name(tg_type)
@@ -189,8 +205,64 @@ def create_structs(types: dict[str, list[Type] | list[str]]) -> None:
     save_structs(structs)
 
 
-def generate_method(item: tuple[str, list[Type]]) -> str:
-    pass
+def generate_method_docs(method_desc: str) -> str:
+    result = f"\t/// {method_desc}\n"
+    return result
+
+
+def save_new_enum(tg_type: str) -> None:
+    global FILE_PATH, TYPES_FILE_NAME
+
+    with open(f"{FILE_PATH}/{TYPES_FILE_NAME}", "r", encoding="utf-8") as file:
+        if or_enum_name(tg_type) in file.read():
+            return
+
+    new_enum = or_enum(tg_type)
+    with open(f"{FILE_PATH}/{TYPES_FILE_NAME}", "a", encoding="utf-8") as file:
+        file.write(new_enum)
+
+
+def generate_method(item: tuple[str, tuple[str, list[MethodField]]]) -> str:
+    method_name = item[0]
+    method_desc = item[1][0]
+    method_fields = item[1][1]
+
+    result = generate_method_docs(method_desc)
+    result += f"\tpub fn {CAMEL_CASE_PATTERN.sub('_', method_name).lower()}(&self, "
+    for field in method_fields:
+        if (" or " in field.tg_type.lower()) or (" , " in field.tg_type.lower()):
+            save_new_enum(field.tg_type)
+            field.tg_type = or_enum_name(field.tg_type)
+
+        rust_type = ("%s" if field.required else "Option<%s>") % get_type(field.tg_type)
+        if field.name == "type":
+            field.name += "_"
+        result += f"{field.name}: {rust_type}, "
+
+    if result.endswith(", "):
+        result = result[:-2]
+
+    result += ") -> Result<OneOfType> {\n"
+    body = "\t\tlet url: String = format!(\"{}{}{}\", \"https://api.telegram.org/bot\", self.token, \"/%s\");\n" % method_name
+    body += "\t\tlet tm: Duration = Duration::from_secs(20);\n"
+
+    body += f"\t\tlet query: [(&str, String); {len(method_fields)}] = ["
+    for field in method_fields:
+        body += f"(\"{field.name}\", serde_json::to_string(&{field.name})?), "
+    if body.endswith(", "):
+        body = body[:-2]
+    body += "];\n"
+
+    body += "\t\tlet response: Response = self.client.get(url).timeout(tm).query(&query).send()?;\n"
+    body += "\t\tlet status: Status = serde_json::from_str::<Status>(response.text()?.as_str())?;\n"
+    body += "\t\tif status.ok {\n"
+    body += "\t\t\tOk(status.result)\n"
+    body += "\t\t}\n"
+    body += "\t\telse {\n"
+    body += "\t\t\tbail!(\"{:#?}\", status);\n"
+    body += "\t\t}\n"
+
+    return result + body + "\t}\n\n"
 
 
 def save_methods(methods: list[str]) -> None:
@@ -199,19 +271,31 @@ def save_methods(methods: list[str]) -> None:
     if not os.path.exists(FILE_PATH):
         os.makedirs(FILE_PATH)
 
-    code = "use anyhow::Result;\n"
+    code = "use std::time::Duration;\n\n"
+    code += "use anyhow::{bail, Result};\n"
     code += "use reqwest::blocking::*;\n"
     code += "use serde::{Deserialize, Serialize};\n"
     code += "use serde_json;\n\n"
-    code += "use crate::types::*;\n"
+    code += "use crate::types::*;\n\n\n"
+    code += "#[derive(Serialize, Deserialize, Debug, Clone)]\n"
+    code += "pub struct Status {\n"
+    code += "\tok: bool,\n"
+    code += "\tresult: OneOfType,\n"
+    code += "}\n\n\n"
+    code += "#[derive(Debug, Clone)]\n"
+    code += "pub struct Api {\n"
+    code += "\tpub token: String,\n"
+    code += "\tpub client: Client,\n"
+    code += "}\n\n\n"
+    code += "impl Api {\n"
 
     for method in methods:
         code += method
 
     with open(f"{FILE_PATH}/{METHODS_FILE_NAME}", "w", encoding="utf-8") as file:
-        file.write(code)
+        file.write(code + "}\n")
 
 
-def create_methods(methods: dict[str, list[Type]]) -> None:
+def create_methods(methods: dict[str, tuple[str, list[MethodField]]]) -> None:
     result = [generate_method(item) for item in methods.items()]
     save_methods(result)

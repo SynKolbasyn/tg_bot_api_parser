@@ -11,3 +11,11 @@ class Type:
         self.name = name
         self.tg_type = tg_type
         self.optional = optional
+
+
+class MethodField:
+    def __init__(self, name: str, tg_type: str, required: bool, description: str):
+        self.name = name
+        self.tg_type = tg_type
+        self.required = required
+        self.description = description
